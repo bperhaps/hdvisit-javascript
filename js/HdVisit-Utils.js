@@ -21,19 +21,15 @@ export default class Utils {
     function
 
     static makePath(contry, date, idx) {
+        if(idx == undefined) {
+            return "m/" +
+                contry + "'/" +
+                this.calcDateDiff(date) + "'";
+        }
         return "m/" +
-            contry + "'" +
-            this.calcDateDiff(date) + "'" +
+            contry + "'/" +
+            this.calcDateDiff(date) + "'/" +
             idx;
-    }
-
-    export
-    function
-
-    static makePath(contry, date) {
-        return "m/" +
-            contry + "'" +
-            this.calcDateDiff(date) + "'";
     }
 
     export
@@ -45,7 +41,7 @@ export default class Utils {
 
         let diff = secondDate.getTime() - firstDate.getTime();
 
-        return Math.floor(
+        return Math.ceil(
             diff / (1000 * 3600 * 24)
         );
     }

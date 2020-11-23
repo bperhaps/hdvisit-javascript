@@ -3,11 +3,10 @@ import HdKey from "hdkey";
 import ethUtil from "ethereumjs-util";
 import Utils from "./HdVisit-Utils.js";
 import {web3} from "./Web3Connector.js";
-import Transaction from "ethereumjs-tx";
 import VisitedContract from "./VisitedContract.js";
-import Common from "ethereumjs-common";
+import {createSignedTransaction} from "./transactionController.js";
 
-class Customer {
+export class Customer {
     static Korea = 0;
 
     constructor(mnemonic) {
@@ -15,21 +14,61 @@ class Customer {
         this._index = 0;
     }
 
-    async createMyInfo() {
+    async _getKey(date, index) {
+        if(date == undefined) date = new Date();
+        if(index == undefined) {
+            index = this._index;
+            this._index++;
+        }
+
         let seed = await Bip39.mnemonicToSeed(this._mnemonic);
         let hdwallet = HdKey.fromMasterSeed(seed);
         let key = hdwallet.derive(
-            Utils.makePath(Customer.Korea, new Date(), this._index)
+            Utils.makePath(Customer.Korea, date, index)
         );
 
-        let x = await this._createTransaction(key, "0x5Ec01d0C4638f60a57F8534a9a2d5cF7BA09a5f0");
-        return x;
+        return key
+    }
+
+    //YYYY-MM-dd
+    async getMyPath(date) {
+        let path = [];
+
+        for(let i=0;;i++) {
+            let key = await this._getKey(new Date(date), i);
+            let address = ethUtil.pubToAddress(key._publicKey, true).toString("hex");
+            let visited = await VisitedContract.find(address)
+            if(visited["0"] == "0x0000000000000000000000000000000000000000") break;
+            path.push(visited);
+        }
+
+        return path;
+    }
+
+    async getDayPath(date) {
+        let seed = await Bip39.mnemonicToSeed(this._mnemonic);
+        let hdwallet = HdKey.fromMasterSeed(seed);
+        let key = hdwallet.derive(
+            Utils.makePath(Customer.Korea, new Date(date))
+        );
+
+        return key.publicExtendedKey;
+    }
+
+    async createMyInfo(shopAddress) {
+        let key = await this._getKey();
+        console.log("createMyInfo : " + ethUtil.pubToAddress(key._publicKey, true).toString("hex"));
+        let rawTransaction = await this._createTransaction(key, shopAddress);
+        return {
+            "serializedTransaction" :rawTransaction,
+            "address" : "0x" + ethUtil.pubToAddress(key._publicKey, true).toString("hex")
+        };
     }
 
 
-    async _createTransaction(key, shopAddress) {
-        let contract = await new web3.eth.Contract(VisitedContract._abi, VisitedContract._address)
-            .methods.visit(shopAddress, Utils.timeToSec().toString());
+    async   _createTransaction(key, shopAddress) {
+        let contract = await new web3.eth.Contract(VisitedContract.abi, VisitedContract.address)
+            .methods.visit(shopAddress, Utils.timeToSec());
         let data =contract.encodeABI();
 
         let privKey = Buffer.from(key._privateKey, "hex");
@@ -37,33 +76,16 @@ class Customer {
         let rawTx = {
             nonce : await web3.eth.getTransactionCount(address),
             from : address,
-            to : shopAddress,
-            value : 0x0,
+            to : VisitedContract.address,
+            value : 0x00,
             data : data,
             gasLimit : await contract.estimateGas(),
             gasPrice : web3.utils.toHex(await web3.eth.getGasPrice())
         }
 
-        const customCommon = Common.default.forCustomChain(
-            "mainnet",
-            {
-                name: "testNetwork",
-                networkId : 1337,
-                chainId : 1337
-            },
-            "byzantium"
-        )
-
-        let tx = new Transaction.Transaction(rawTx, {
-            common : customCommon
-        });
-
-        tx.sign(privKey);
-        let serializedTx = tx.serialize();
-
-        return serializedTx
+        return createSignedTransaction(rawTx, privKey);
     }
-}
 
-let x = new Customer().createMyInfo();
-console.log(x);
+
+
+}
